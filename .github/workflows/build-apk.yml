@@ -1,0 +1,56 @@
+
+name: Build Aurora Media APK (ZIP Upload)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'AuroraMedia_GitHub_Repo_v0.1.zip'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        run: |
+          unzip -q AuroraMedia_GitHub_Repo_v0.1.zip -d extracted
+          test -f extracted/AuroraMedia_GitHub_Repo/settings.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        working-directory: extracted/AuroraMedia_GitHub_Repo
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuroraMedia-debug-APK
+          path: extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
