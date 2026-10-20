@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.AuroraMedia" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#7C95F8</item>
+        <item name="android:statusBarColor">#0C101A</item>
+        <item name="android:navigationBarColor">#0C101A</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
