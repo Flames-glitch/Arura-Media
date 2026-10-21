@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'AuroraMedia_GitHub_Repo_v0.1.zip'
+      - 'AuroraMedia_GitHub_Repo_v*.zip'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -25,11 +25,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Android project ZIP
+      - name: Extract latest Aurora Media ZIP
+        shell: bash
         run: |
-          unzip -q AuroraMedia_GitHub_Repo_v0.1.zip -d extracted
+          shopt -s nullglob
+          archives=(AuroraMedia_GitHub_Repo_v*.zip)
+
+          if (( ${#archives[@]} == 0 )); then
+            echo "::error::Aurora Media ZIP not found"
+            exit 1
+          fi
+
+          archive=$(printf '%s\n' "${archives[@]}" | sort -V | tail -n 1)
+
+          echo "Using $archive"
+          unzip -q "$archive" -d extracted
+
           test -f extracted/AuroraMedia_GitHub_Repo/settings.gradle.kts
           test -f extracted/AuroraMedia_GitHub_Repo/app/build.gradle.kts
+
+      - name: Fix LibVLC subtitle API
+        shell: bash
+        run: |
+          file=extracted/AuroraMedia_GitHub_Repo/app/src/main/java/com/aurora/media/player/VlcSession.kt
+
+          test -f "$file"
+
+          if grep -q 'Media.Slave.Type.Subtitle' "$file"; then
+            sed -i 's/Media\.Slave\.Type\.Subtitle/0/g' "$file"
+            echo "LibVLC subtitle API corrected"
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -43,10 +68,8 @@ jobs:
           echo "Android SDK: $ANDROID_HOME"
 
           if [[ -f "$ANDROID_HOME/platforms/android-35/android.jar" && -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
-            echo "Android SDK 35 already installed."
+            echo "Android SDK 35 already installed"
           else
-            echo "Installing missing SDK packages."
-
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
             if [[ ! -x "$SDKMANAGER" ]]; then
@@ -58,7 +81,7 @@ jobs:
                 break
               fi
 
-              echo "SDK install attempt $attempt failed."
+              echo "SDK installation attempt $attempt failed"
               sleep 10
             done
 
@@ -81,4 +104,3 @@ jobs:
           name: AuroraMedia-debug-APK
           path: extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          
