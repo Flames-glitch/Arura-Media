@@ -32,29 +32,44 @@ jobs:
           archives=(AuroraMedia_GitHub_Repo_v*.zip)
 
           if (( ${#archives[@]} == 0 )); then
-            echo "::error::Aurora Media ZIP not found"
+            echo "::error::Aurora Media ZIP not found."
             exit 1
           fi
 
           archive=$(printf '%s\n' "${archives[@]}" | sort -V | tail -n 1)
 
-          echo "Using $archive"
+          echo "Building from $archive"
           unzip -q "$archive" -d extracted
 
           test -f extracted/AuroraMedia_GitHub_Repo/settings.gradle.kts
           test -f extracted/AuroraMedia_GitHub_Repo/app/build.gradle.kts
 
-      - name: Fix LibVLC subtitle API
+      - name: Patch LibVLC API and playback speed clash
         shell: bash
         run: |
-          file=extracted/AuroraMedia_GitHub_Repo/app/src/main/java/com/aurora/media/player/VlcSession.kt
+          src=extracted/AuroraMedia_GitHub_Repo/app/src/main/java/com/aurora/media/player
+          vlc="$src/VlcSession.kt"
+          screen="$src/PlayerScreen.kt"
 
-          test -f "$file"
+          test -f "$vlc"
+          test -f "$screen"
 
-          if grep -q 'Media.Slave.Type.Subtitle' "$file"; then
-            sed -i 's/Media\.Slave\.Type\.Subtitle/0/g' "$file"
-            echo "LibVLC subtitle API corrected"
+          # Fix unsupported LibVLC subtitle type
+          if grep -q 'Media.Slave.Type.Subtitle' "$vlc"; then
+            sed -i 's/Media\.Slave\.Type\.Subtitle/0/g' "$vlc"
+            echo 'Fixed subtitle type reference.'
           fi
+
+          # Fix Kotlin setSpeed() JVM signature clash
+          if grep -q 'fun setSpeed(value: Float)' "$vlc"; then
+            sed -i 's/fun setSpeed(value: Float)/fun updateSpeed(value: Float)/' "$vlc"
+            sed -i 's/session::setSpeed/session::updateSpeed/g' "$screen"
+            echo 'Fixed playback speed JVM signature clash.'
+          fi
+
+          ! grep -q 'Media.Slave.Type.Subtitle' "$vlc"
+          ! grep -q 'fun setSpeed(value: Float)' "$vlc"
+          ! grep -q 'session::setSpeed' "$screen"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -68,7 +83,7 @@ jobs:
           echo "Android SDK: $ANDROID_HOME"
 
           if [[ -f "$ANDROID_HOME/platforms/android-35/android.jar" && -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
-            echo "Android SDK 35 already installed"
+            echo 'Android SDK 35 is already installed.'
           else
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
@@ -81,7 +96,7 @@ jobs:
                 break
               fi
 
-              echo "SDK installation attempt $attempt failed"
+              echo "SDK installation attempt $attempt failed."
               sleep 10
             done
 
