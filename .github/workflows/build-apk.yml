@@ -1,5 +1,4 @@
-
-name: Build Aurora Media V0.4 Test APK
+name: Build Aurora Media Android APK (V0.6 preflight + tests)
 
 on:
   workflow_dispatch:
@@ -16,90 +15,65 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Extract latest Aurora Media ZIP
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
           archives=(AuroraMedia_GitHub_Repo_v*.zip)
-
           if (( ${#archives[@]} == 0 )); then
-            echo '::error::Aurora Media ZIP not found'
+            echo '::error::Source ZIP missing at repository root'
             exit 1
           fi
-
           archive=$(printf '%s\n' "${archives[@]}" | sort -V | tail -n 1)
-
-          echo "Building from $archive"
+          echo "Using $archive"
           unzip -q "$archive" -d extracted
-
-          test -f extracted/AuroraMedia_GitHub_Repo/settings.gradle.kts
-          test -f extracted/AuroraMedia_GitHub_Repo/app/build.gradle.kts
-
-      - name: Set up Java 17
+          project=extracted/AuroraMedia_GitHub_Repo
+          test -f "$project/settings.gradle.kts"
+          test -f "$project/app/build.gradle.kts"
+          python3 "$project/tools/verify_project.py"
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Check Android SDK 35
+      - name: Confirm Android SDK 35
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ -f "$ANDROID_HOME/platforms/android-35/android.jar" && -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
-            echo 'Android SDK 35 already installed.'
-          else
+          if [[ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" || ! -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
             manager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-            if [[ ! -x "$manager" ]]; then
-              manager=$(command -v sdkmanager)
-            fi
-
+            if [[ ! -x "$manager" ]]; then manager=$(command -v sdkmanager); fi
             for attempt in 1 2 3; do
-              if "$manager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'; then
-                break
-              fi
-
-              echo "SDK installation attempt $attempt failed"
+              if "$manager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'; then break; fi
               sleep 10
             done
-
-            test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-            test -d "$ANDROID_HOME/build-tools/35.0.0"
           fi
-
-      - name: Set up Gradle 8.9
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Build test APK
+      - name: Run regression unit tests and compile debug APK
         working-directory: extracted/AuroraMedia_GitHub_Repo
-        env:
-          AURORA_SIGNING_KEYSTORE: ''
-          AURORA_SIGNING_PASSWORD: ''
-        run: gradle --no-daemon --console=plain --stacktrace :app:assembleDebug
-
-      - name: Verify APK
+        run: gradle --no-daemon --console=plain --stacktrace :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify signed APK
         shell: bash
         run: |
+          set -euo pipefail
           apk=extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/app-debug.apk
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AuroraMedia-v0.4-Test-APK
+          name: AuroraMedia-v0.6-Player-Offload-APK
           path: extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
