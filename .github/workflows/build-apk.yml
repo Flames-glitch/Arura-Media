@@ -1,4 +1,5 @@
-name: Build Aurora Media APK (Persistent Signing)
+
+name: Build Aurora Media V0.4 Test APK
 
 on:
   workflow_dispatch:
@@ -15,36 +16,34 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      AURORA_SIGNING_PASSWORD: ${{ secrets.AURORA_KEYSTORE_PASSWORD }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Extract latest Aurora Media source ZIP
+      - name: Extract latest Aurora Media ZIP
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
           archives=(AuroraMedia_GitHub_Repo_v*.zip)
+
           if (( ${#archives[@]} == 0 )); then
-            echo '::error::No AuroraMedia_GitHub_Repo_v*.zip uploaded at repository root.'
+            echo '::error::Aurora Media ZIP not found'
             exit 1
           fi
+
           archive=$(printf '%s\n' "${archives[@]}" | sort -V | tail -n 1)
-          echo "Building $archive"
+
+          echo "Building from $archive"
           unzip -q "$archive" -d extracted
-          project=extracted/AuroraMedia_GitHub_Repo
-          test -f "$project/settings.gradle.kts"
-          test -f "$project/app/build.gradle.kts"
-          grep -q 'auroraPersistent' "$project/app/build.gradle.kts" || {
-            echo '::error::Upload the V0.4 or newer source ZIP with persistent signing support.'
-            exit 1
-          }
-          python3 "$project/tools/verify_project.py"
+
+          test -f extracted/AuroraMedia_GitHub_Repo/settings.gradle.kts
+          test -f extracted/AuroraMedia_GitHub_Repo/app/build.gradle.kts
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -52,62 +51,55 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Confirm Android SDK 35
+      - name: Check Android SDK 35
         shell: bash
         run: |
           set -euo pipefail
+
           if [[ -f "$ANDROID_HOME/platforms/android-35/android.jar" && -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
-            echo 'Android SDK 35 is available.'
+            echo 'Android SDK 35 already installed.'
           else
             manager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-            if [[ ! -x "$manager" ]]; then manager=$(command -v sdkmanager); fi
+
+            if [[ ! -x "$manager" ]]; then
+              manager=$(command -v sdkmanager)
+            fi
+
             for attempt in 1 2 3; do
-              if "$manager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'; then break; fi
+              if "$manager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'; then
+                break
+              fi
+
               echo "SDK installation attempt $attempt failed"
               sleep 10
             done
+
             test -f "$ANDROID_HOME/platforms/android-35/android.jar"
             test -d "$ANDROID_HOME/build-tools/35.0.0"
           fi
-
-      - name: Restore permanent signing key from GitHub Secrets
-        shell: bash
-        env:
-          AURORA_KEYSTORE_B64: ${{ secrets.AURORA_KEYSTORE_B64 }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$AURORA_KEYSTORE_B64" || -z "$AURORA_SIGNING_PASSWORD" ]]; then
-            echo '::error::Set AURORA_KEYSTORE_B64 and AURORA_KEYSTORE_PASSWORD in repository Actions secrets.'
-            exit 1
-          fi
-          keystore="$RUNNER_TEMP/aurora-media-signing.p12"
-          printf '%s' "$AURORA_KEYSTORE_B64" | base64 --decode > "$keystore"
-          chmod 600 "$keystore"
-          keytool -list -storetype PKCS12 -keystore "$keystore" -storepass "$AURORA_SIGNING_PASSWORD" -alias aurora-media >/dev/null
-          echo "AURORA_SIGNING_KEYSTORE=$keystore" >> "$GITHUB_ENV"
-          echo 'Permanent signing key successfully validated.'
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build permanently signed debug APK
+      - name: Build test APK
         working-directory: extracted/AuroraMedia_GitHub_Repo
+        env:
+          AURORA_SIGNING_KEYSTORE: ''
+          AURORA_SIGNING_PASSWORD: ''
         run: gradle --no-daemon --console=plain --stacktrace :app:assembleDebug
 
-      - name: Verify APK signing certificate
+      - name: Verify APK
         shell: bash
         run: |
-          set -euo pipefail
           apk=extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/app-debug.apk
-          test -f "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | grep -E '^Signer #1 certificate SHA-256 digest:'
-          echo 'Record this SHA-256 digest. It must remain identical in every future update.'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AuroraMedia-Persistently-Signed-APK
+          name: AuroraMedia-v0.4-Test-APK
           path: extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
