@@ -1,4 +1,4 @@
-name: Build Aurora Media Android APK (V0.6 preflight + tests)
+name: Build Aurora Media Android APK (V0.6.3 premium player + upcoming trailers)
 
 on:
   workflow_dispatch:
@@ -74,6 +74,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AuroraMedia-v0.6-Player-Offload-APK
+          name: AuroraMedia-v0.6.3-Premium-APK
           path: extracted/AuroraMedia_GitHub_Repo/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
